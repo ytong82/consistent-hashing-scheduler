@@ -1,65 +1,58 @@
 package interview.aliyun.scheduler;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.text.DecimalFormat;
 import java.util.List;
-import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import interview.aliyun.scheduler.entity.Server;
+import interview.aliyun.scheduler.helper.PropertyHelper;
 import interview.aliyun.scheduler.helper.ServerHelper;
 import interview.aliyun.scheduler.helper.TaskHelper;
 
 public class App {
-	private static void loadProperties() throws IOException {
-		InputStream input = App.class.getClassLoader().getResourceAsStream("config.properties");
-		Properties prop = new Properties();
-
-        if (input == null) {
-            System.out.println("Sorry, unable to find config.properties");
-            throw new IOException();
-        }
-        prop.load(input);
-	}
 	
     public static void main( String[] args ) {
     	// load properties
+    	PropertyHelper propertyHelper = new PropertyHelper();
     	try {
-    		loadProperties();
+    		propertyHelper.loadProperties();
     	} catch (IOException ex) {
+    		ex.printStackTrace();
+    		System.exit(1);
+    	} catch (IllegalArgumentException ex) {
     		ex.printStackTrace();
     		System.exit(1);
     	}
     	
     	// setup helpers
-    	ServerHelper serverHelper = new ServerHelper();
+    	ServerHelper serverHelper = new ServerHelper(propertyHelper);
     	TaskHelper taskHelper = new TaskHelper();
     	
     	// setup scheduler
     	List<Server> servers = serverHelper.getServers();
-    	Scheduler scheduler = new Scheduler(servers);
+    	Scheduler scheduler = new Scheduler(servers, propertyHelper);
     	
     	// schedule
     	ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(10);
     	
-    	// start task runner at the interval of 5s
+    	// run task runner at the interval of 5s, 100000 tasks in a batch, 2 runners, run for twice
     	for (int i=0; i<2; i++) {
-    		TaskRunner taskRunner = new TaskRunner(100000, 5, scheduler, taskHelper);
+    		TaskRunner taskRunner = new TaskRunner(100000, 5, 2, scheduler, taskHelper);
     		executor.submit(taskRunner);
     	}
     	
-    	// start task runner at the interval of 10s
+    	// run task runner at the interval of 10s, 100000 tasks in a batch, 2 runners, run for twice
     	for (int i=0; i<2; i++) {
-    		TaskRunner taskRunner = new TaskRunner(100000, 10, scheduler, taskHelper);
+    		TaskRunner taskRunner = new TaskRunner(100000, 10, 2, scheduler, taskHelper);
     		executor.submit(taskRunner);
     	}
     	
-    	// start task runner at the interval of 10s
+    	// run task runner at the interval of 60s, 100000 tasks in a batch, 2 runners, run for once
     	for (int i=0; i<2; i++) {
-    		TaskRunner taskRunner = new TaskRunner(100000, 60, scheduler, taskHelper);
+    		TaskRunner taskRunner = new TaskRunner(100000, 60, 1, scheduler, taskHelper);
     		executor.submit(taskRunner);
     	}
     	try {

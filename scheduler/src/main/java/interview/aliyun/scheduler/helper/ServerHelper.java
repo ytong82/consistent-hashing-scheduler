@@ -9,8 +9,15 @@ import java.util.Set;
 import interview.aliyun.scheduler.entity.Server;
 
 public class ServerHelper {
-	private static final int SERVER_TOTAL = 10000;
-	private Random random = new Random();
+	private PropertyHelper propertyHelper;
+	private Random random;
+	private final int SERVER_TOTAL;
+	
+	public ServerHelper(PropertyHelper propertyHelper) {
+		this.propertyHelper = propertyHelper;
+		this.random = new Random();
+		this.SERVER_TOTAL = this.propertyHelper.getServerTotal();
+	}
 	
 	private String generateIpAddr() {
 		return random.nextInt(256) + "." + random.nextInt(256) + "." 

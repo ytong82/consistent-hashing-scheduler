@@ -10,12 +10,15 @@ import interview.aliyun.scheduler.entity.Server;
 import interview.aliyun.scheduler.entity.Task;
 import interview.aliyun.scheduler.entity.TaskType;
 import interview.aliyun.scheduler.helper.HashUtilHelper;
+import interview.aliyun.scheduler.helper.PropertyHelper;
 
 public class Scheduler {
 	private static final int VIRTUAL_NODE_NUM = 10;
 	private static final String GENERAL_RING_NAME= "General";
-	private static final double IMBALANCE_FACTOR = 1.5f;
-	private static final double BOUND_LOAD_THRESHOLD_FACTOR = 2f;
+	
+	private PropertyHelper propertyHelper;
+	private final double IMBALANCE_FACTOR;
+	private final double BOUND_LOAD_THRESHOLD_FACTOR;
 	
 	private int loadSum;
 	private int serverSum;
@@ -62,7 +65,13 @@ public class Scheduler {
 		}
 	}
 	
-	public Scheduler(List<Server> servers) {
+	public Scheduler(List<Server> servers, PropertyHelper propertyHelper) {
+		// set properties
+		this.propertyHelper = propertyHelper;
+		this.IMBALANCE_FACTOR = this.propertyHelper.getImbalanceFacotr();
+		this.BOUND_LOAD_THRESHOLD_FACTOR = this.propertyHelper.getBoundLoadThresholdFactor();
+		
+		// define servers and hash rings
 		this.servers = new HashMap<String, Map<String, Server>>();
 		this.hashRings = new HashMap<String, SortedMap<Integer, String>>();
 				

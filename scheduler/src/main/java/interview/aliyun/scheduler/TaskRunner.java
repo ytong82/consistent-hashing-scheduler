@@ -6,17 +6,17 @@ import java.util.concurrent.TimeUnit;
 import interview.aliyun.scheduler.entity.Task;
 import interview.aliyun.scheduler.helper.TaskHelper;
 
-public class TaskRunner implements Runnable {
-	private static final int RUN_TIMES = 1;
-	
+public class TaskRunner implements Runnable {	
 	private int taskNum;
 	private int sleepDuration;
+	private int runTimes;
 	private Scheduler scheduler;
 	private TaskHelper taskHelper;
 	
-	public TaskRunner(int taskNum, int sleepDuration, Scheduler scheduler, TaskHelper taskHelper) {
+	public TaskRunner(int taskNum, int sleepDuration, int runTimes, Scheduler scheduler, TaskHelper taskHelper) {
 		this.taskNum = taskNum;
 		this.sleepDuration = sleepDuration;
+		this.runTimes = runTimes;
 		this.scheduler = scheduler;
 		this.taskHelper = taskHelper;
 	}
@@ -27,7 +27,7 @@ public class TaskRunner implements Runnable {
 			int count = 0;
 	    	long startTime = System.currentTimeMillis();
 	    	long endTime = System.currentTimeMillis();
-	    	for (int i=0; i<RUN_TIMES; i++) {
+	    	for (int i=0; i<runTimes; i++) {
 		    	for (Task task : tasks) {
 		    		count++;
 		    		if (count % 10000 == 0) {
@@ -38,7 +38,7 @@ public class TaskRunner implements Runnable {
 		    		}
 		    		this.scheduler.scheduleTask(task);
 		    	}
-		    	if (i < RUN_TIMES) {
+		    	if (i < runTimes) {
 		    		TimeUnit.SECONDS.sleep(this.sleepDuration);
 		    	}
 	    	}
