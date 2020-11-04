@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import interview.aliyun.scheduler.entity.Server;
 import interview.aliyun.scheduler.entity.Task;
@@ -19,6 +20,8 @@ public class Scheduler {
 	private PropertyHelper propertyHelper;
 	private final double IMBALANCE_FACTOR;
 	private final double BOUND_LOAD_THRESHOLD_FACTOR;
+	
+	private final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
 	
 	private int loadSum;
 	private int serverSum;
@@ -35,18 +38,12 @@ public class Scheduler {
 		return virtualNode.split("&&")[0];
 	}
 	
-	synchronized private void  updateMaxAssignedLoad() {
-		this.serverSum = 0;
-		this.loadSum = 0;
-		for (Server server : this.servers.get(GENERAL_RING_NAME).values()) {
-			this.serverSum++;
-			this.loadSum  += server.getLoad();
-		}
+	synchronized private void updateMaxAssignedLoad() {
 		this.maxAssignedLoad = (this.loadSum / this.serverSum) * IMBALANCE_FACTOR;
 		this.bound_load_threshold = (int) (this.serverSum / TaskType.values().length * BOUND_LOAD_THRESHOLD_FACTOR);
 	}
 	
-	private void updateHashRings() {
+	synchronized private void updateHashRings() {
 		// clean up all hash rings
 		this.hashRings.clear();
 		
@@ -76,9 +73,12 @@ public class Scheduler {
 		this.hashRings = new HashMap<String, SortedMap<Integer, String>>();
 				
 		// initialize general servers and hash ring
+		this.loadSum = 0;
+		this.serverSum = 0;
 		Map<String, Server> generalServers = new HashMap<String, Server>();
 		SortedMap<Integer, String> generalRing = new TreeMap<Integer, String>();
 		for (Server server: servers) {
+			this.serverSum++;
 			generalServers.put(server.getIp(), server);
 			for (int i=0; i<VIRTUAL_NODE_NUM; i++) {
 				String virtualNodeName = getVirtualNodeName(server.getIp(), i);
@@ -97,8 +97,9 @@ public class Scheduler {
         }
 	}
 	
-	synchronized public Server scheduleTask(Task task) {
+	public Server scheduleTask(Task task) {
 		// update max assigned load
+		this.loadSum  += task.getWeight();
 		updateMaxAssignedLoad();
 				
 		// search task specific ring, then search general ring
@@ -110,6 +111,7 @@ public class Scheduler {
 		int vnHashKey;
 		
 		boolean skipTaskRing = true;
+		rwl.readLock().lock();
 		if (!taskRing.isEmpty()) {	
 			SortedMap<Integer, String> subRing = taskRing.tailMap(hashVal);
 			if (subRing == null || subRing.isEmpty()) {
@@ -150,6 +152,7 @@ public class Scheduler {
 				skipTaskRing = false;
 			}
 		} 
+		rwl.readLock().unlock();
 		
 		if (taskRing.isEmpty() || skipTaskRing) {
 			SortedMap<Integer, String> generalRing = this.hashRings.get(GENERAL_RING_NAME);
@@ -180,13 +183,16 @@ public class Scheduler {
 			}
 			
 			// update task specific ring by schedule result
+			
+			rwl.writeLock().lock();
 			this.servers.get(task.getType().toString()).put(server.getIp(), server);
 			for (int i=0; i<VIRTUAL_NODE_NUM; i++) {
 				String virtualNodeName = getVirtualNodeName(serverIp, i);
 				hashVal = HashUtilHelper.getHashVal(virtualNodeName);
 				//System.out.println("[" + virtualNodeName + "] launched @ " + hashVal);
 				taskRing.put(hashVal, virtualNodeName);	
-			}	
+			}
+			rwl.writeLock().unlock();
 		}
 		
 		// add this task the server
@@ -197,12 +203,14 @@ public class Scheduler {
 	
 	public void addServer(Server server) {
 		// update general and task specific servers
+		this.serverSum++;
 		this.servers.get(GENERAL_RING_NAME).put(server.getIp(), server);
 		updateHashRings();
 	}
 	
 	public void removeServer(Server server) {
 		// update general and task specific servers
+		this.serverSum--;
 		for (Map<String, Server> serverMap : this.servers.values()) {
 			serverMap.remove(server.getIp());
 		}

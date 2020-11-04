@@ -1,7 +1,7 @@
 package interview.aliyun.scheduler;
 
 import java.io.IOException;
-import java.text.DecimalFormat;
+//import java.text.DecimalFormat;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -35,6 +35,9 @@ public class App {
     	List<Server> servers = serverHelper.getServers();
     	Scheduler scheduler = new Scheduler(servers, propertyHelper);
     	
+    	// start timer
+    	long startTime = System.currentTimeMillis();
+    	
     	// schedule
     	ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(10);
     	
@@ -60,10 +63,15 @@ public class App {
 			executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MINUTES);
 		} catch (InterruptedException e) {
 			e.printStackTrace();
-		}   	
+		}  
+    	
+    	// stop timer
+    	long endTime = System.currentTimeMillis();
+    	System.out.printf("[THREAD] %s program takes %s to run \n", 
+				Thread.currentThread().getName(), (endTime - startTime) + "ms");
     	
     	// print result
-    	long loadSum = 0;
+    	/*long loadSum = 0;
     	for (Server server : servers) {
     		loadSum += server.getLoad();
     	}
@@ -71,6 +79,6 @@ public class App {
     	DecimalFormat df = new DecimalFormat("0.0000");
     	for (Server server : servers) {
     		System.out.printf("[SERVER] %s takes %s load with %s percentage \n", server.getIp(), server.getLoad(), df.format((float)server.getLoad() / loadSum));
-    	}
+    	}*/
     }
 }
