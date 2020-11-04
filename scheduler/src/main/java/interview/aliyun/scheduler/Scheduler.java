@@ -38,7 +38,8 @@ public class Scheduler {
 		return virtualNode.split("&&")[0];
 	}
 	
-	synchronized private void updateMaxAssignedLoad() {
+	synchronized private void updateMaxAssignedLoad(int weight) {
+		this.loadSum += weight;
 		this.maxAssignedLoad = (this.loadSum / this.serverSum) * IMBALANCE_FACTOR;
 		this.bound_load_threshold = (int) (this.serverSum / TaskType.values().length * BOUND_LOAD_THRESHOLD_FACTOR);
 	}
@@ -98,9 +99,8 @@ public class Scheduler {
 	}
 	
 	public Server scheduleTask(Task task) {
-		// update max assigned load
-		this.loadSum  += task.getWeight();
-		updateMaxAssignedLoad();
+		// update max assigned load	
+		updateMaxAssignedLoad(task.getWeight());
 				
 		// search task specific ring, then search general ring
 		int hashVal = HashUtilHelper.getHashVal(task.getId());
@@ -111,89 +111,100 @@ public class Scheduler {
 		int vnHashKey;
 		
 		boolean skipTaskRing = true;
+		
 		rwl.readLock().lock();
-		if (!taskRing.isEmpty()) {	
-			SortedMap<Integer, String> subRing = taskRing.tailMap(hashVal);
-			if (subRing == null || subRing.isEmpty()) {
-				vnHashKey = taskRing.firstKey();
-			} else {
-				vnHashKey = subRing.firstKey();
-			}
-			virtualNode = taskRing.get(vnHashKey);
-			serverIp = getServerName(virtualNode);
-			server = this.servers.get(task.getType().toString()).get(serverIp);
-			
-			// using bounded load consistent hashing algorithm
-			if (server.getLoad() > this.maxAssignedLoad) {	
-				Map<String, Server> taskServers = this.servers.get(task.getType().toString());
-				if (taskServers.size() > bound_load_threshold) {
-					for (Server taskServer : taskServers.values()) {
-						if (taskServer.getLoad() < this.maxAssignedLoad) {
-							skipTaskRing = false;
-							break;
-						}
-					}					
-					if (!skipTaskRing) {
-						do {
-							// find next virtual node in the ring
-							subRing = taskRing.tailMap(vnHashKey + 1);
-							if (subRing == null || subRing.isEmpty()) {
-								vnHashKey = taskRing.firstKey();	
-							} else {
-								vnHashKey = subRing.firstKey();
-							}
-							virtualNode = taskRing.get(vnHashKey);
-							serverIp = getServerName(virtualNode);
-							server = this.servers.get(task.getType().toString()).get(serverIp);
-						} while (server.getLoad() > this.maxAssignedLoad);
-					}
+		try {
+			if (!taskRing.isEmpty()) {	
+				SortedMap<Integer, String> subRing = taskRing.tailMap(hashVal);
+				if (subRing == null || subRing.isEmpty()) {
+					vnHashKey = taskRing.firstKey();
+				} else {
+					vnHashKey = subRing.firstKey();
 				}
-			} else {
-				skipTaskRing = false;
-			}
-		} 
-		rwl.readLock().unlock();
+				virtualNode = taskRing.get(vnHashKey);
+				serverIp = getServerName(virtualNode);
+				server = this.servers.get(task.getType().toString()).get(serverIp);
+				
+				// using bounded load consistent hashing algorithm
+				if (server.getLoad() > this.maxAssignedLoad) {	
+					Map<String, Server> taskServers = this.servers.get(task.getType().toString());
+					if (taskServers.size() > bound_load_threshold) {
+						for (Server taskServer : taskServers.values()) {
+							if (taskServer.getLoad() < this.maxAssignedLoad) {
+								skipTaskRing = false;
+								break;
+							}
+						}					
+						if (!skipTaskRing) {
+							do {
+								// find next virtual node in the ring
+								subRing = taskRing.tailMap(vnHashKey + 1);
+								if (subRing == null || subRing.isEmpty()) {
+									vnHashKey = taskRing.firstKey();	
+								} else {
+									vnHashKey = subRing.firstKey();
+								}
+								virtualNode = taskRing.get(vnHashKey);
+								serverIp = getServerName(virtualNode);
+								server = this.servers.get(task.getType().toString()).get(serverIp);
+							} while (server.getLoad() > this.maxAssignedLoad);
+						}
+					}
+				} else {
+					skipTaskRing = false;
+				}
+			} 
+		} finally {
+			rwl.readLock().unlock();
+		}
 		
 		if (taskRing.isEmpty() || skipTaskRing) {
-			SortedMap<Integer, String> generalRing = this.hashRings.get(GENERAL_RING_NAME);
-			SortedMap<Integer, String> subRing = generalRing.tailMap(hashVal);
-			if (subRing == null || subRing.isEmpty()) {
-				vnHashKey = generalRing.firstKey();
-			} else {
-				vnHashKey = subRing.firstKey();
+			rwl.readLock().lock();
+			try {
+				SortedMap<Integer, String> generalRing = this.hashRings.get(GENERAL_RING_NAME);
+				SortedMap<Integer, String> subRing = generalRing.tailMap(hashVal);
+				if (subRing == null || subRing.isEmpty()) {
+					vnHashKey = generalRing.firstKey();
+				} else {
+					vnHashKey = subRing.firstKey();
+				}
+				virtualNode = generalRing.get(vnHashKey);
+				serverIp = getServerName(virtualNode);
+				server = this.servers.get(GENERAL_RING_NAME).get(serverIp);
+				
+				// using bounded load consistent hashing algorithm
+				if (server.getLoad() > this.maxAssignedLoad) {
+					do {
+						// find next virtual node in the ring
+						subRing = generalRing.tailMap(vnHashKey + 1);
+						if (subRing == null || subRing.isEmpty()) {
+							vnHashKey = generalRing.firstKey();	
+						} else {
+							vnHashKey = subRing.firstKey();
+						}
+						virtualNode = generalRing.get(vnHashKey);
+						serverIp = getServerName(virtualNode);
+						server = this.servers.get(GENERAL_RING_NAME).get(serverIp);
+					} while (server.getLoad() > this.maxAssignedLoad);
+				}
+			} finally {
+				rwl.readLock().unlock();
 			}
-			virtualNode = generalRing.get(vnHashKey);
-			serverIp = getServerName(virtualNode);
-			server = this.servers.get(GENERAL_RING_NAME).get(serverIp);
-			
-			// using bounded load consistent hashing algorithm
-			if (server.getLoad() > this.maxAssignedLoad) {
-				do {
-					// find next virtual node in the ring
-					subRing = generalRing.tailMap(vnHashKey + 1);
-					if (subRing == null || subRing.isEmpty()) {
-						vnHashKey = generalRing.firstKey();	
-					} else {
-						vnHashKey = subRing.firstKey();
-					}
-					virtualNode = generalRing.get(vnHashKey);
-					serverIp = getServerName(virtualNode);
-					server = this.servers.get(GENERAL_RING_NAME).get(serverIp);
-				} while (server.getLoad() > this.maxAssignedLoad);
-			}
-			
 			// update task specific ring by schedule result
 			
 			rwl.writeLock().lock();
-			this.servers.get(task.getType().toString()).put(server.getIp(), server);
-			for (int i=0; i<VIRTUAL_NODE_NUM; i++) {
-				String virtualNodeName = getVirtualNodeName(serverIp, i);
-				hashVal = HashUtilHelper.getHashVal(virtualNodeName);
-				//System.out.println("[" + virtualNodeName + "] launched @ " + hashVal);
-				taskRing.put(hashVal, virtualNodeName);	
+			try {
+				this.servers.get(task.getType().toString()).put(server.getIp(), server);
+				for (int i=0; i<VIRTUAL_NODE_NUM; i++) {
+					String virtualNodeName = getVirtualNodeName(serverIp, i);
+					hashVal = HashUtilHelper.getHashVal(virtualNodeName);
+					//System.out.println("[" + virtualNodeName + "] launched @ " + hashVal);
+					taskRing.put(hashVal, virtualNodeName);	
+				}
+			} finally {
+				rwl.writeLock().unlock();
 			}
-			rwl.writeLock().unlock();
-		}
+		} 
 		
 		// add this task the server
 		// System.out.printf("[SERVER] %s schedule [TASK] %s with type %s \n", server.getIp(), task.getId(), task.getType().toString());
